@@ -49,6 +49,7 @@ import os
 from pathlib import Path
 import re
 from typing import Iterable, List, Dict, Any, Tuple, Optional
+from datetime import datetime
 
 try:
     import tomllib  # Python 3.11+
@@ -147,6 +148,14 @@ def merge_options(cli, cfg):
     return out
 
 
+def expand_path(path_str: str) -> Path:
+    s = os.path.expanduser(os.path.expandvars(path_str or ".")).strip()
+    # Safety: if the string *should* be absolute but lost its leading slash,
+    # fix accidental "//cwd/home/..." cases by detecting '/home/...'.
+    if not s.startswith("/") and s.startswith("home/"):
+        s = "/" + s
+    return Path(s).resolve()
+
 def looks_binary(sample: bytes) -> bool:
     # Heuristic: if many NULs or high-bit bytes, treat as binary
     if not sample:
@@ -227,8 +236,10 @@ def dir_tree_ascii(root: Path, include_pred) -> str:
 # ------------------------------ Core ---------------------------------------
 
 def build_snapshot(opts: Dict[str, Any]) -> str:
-    root = Path(opts.get("root", ".")).resolve()
-    print(root)
+    # root = Path(opts.get("root", ".")).resolve()
+    root = opts.get("root")  # already a Path from main()
+    if not isinstance(root, Path):
+        root = expand_path(str(root))
     include_exts = set(x.lower() for x in opts.get("include_exts", DEFAULT_INCLUDE_EXTS))
     exclude_dirs = set(opts.get("exclude_dirs", DEFAULT_EXCLUDE_DIRS))
     exclude_files = set(opts.get("exclude_files", DEFAULT_EXCLUDE_FILES))
@@ -362,7 +373,12 @@ def parse_args(argv: Optional[List[str]] = None) -> Dict[str, Any]:
     p.add_argument("--max-bytes", type=int, default=None, help="Max bytes to read per file; 0 = unlimited")
     p.add_argument("--head-lines", type=int, default=None, help="If truncated, include first N lines")
     p.add_argument("--tail-lines", type=int, default=None, help="If truncated, include last N lines")
+    
+    p.add_argument("--debug", action="store_true", help="Print resolved options")
 
+    p.add_argument("--label", default=None, help="Label used in output filename template")
+    p.add_argument("--out-template", default=None,
+               help="Output filename template, supports {label}, {date}, {time}")
 
     args = vars(p.parse_args(argv))
 
@@ -385,7 +401,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     cli = parse_args(argv)
     cfg = load_config(cli.get("config")) if cli.get("config") else {}
     opts = merge_options(cli, cfg)
-
+    raw_root = opts.get("root", ".")
+    if isinstance(raw_root, (str, os.PathLike)):
+        opts["root"] = expand_path(str(raw_root))
+    else:
+        opts["root"] = Path(".").resolve()
+        
     # Fill defaults where needed
     opts.setdefault("include_exts", DEFAULT_INCLUDE_EXTS)
     opts.setdefault("exclude_dirs", DEFAULT_EXCLUDE_DIRS)
@@ -397,16 +418,30 @@ def main(argv: Optional[List[str]] = None) -> int:
     if opts.get("head_lines") is None:       opts["head_lines"] = 200
     if opts.get("tail_lines") is None:       opts["tail_lines"] = 80
     if opts.get("show_stats") is None:       opts["show_stats"] = True
+    
+    if opts.get("debug"):
+        print("DEBUG raw root:", repr(raw_root))
+        print("DEBUG resolved root:", opts["root"])
 
-
-    # Output path default with timestamp
+    # Handle output filename
+    label = opts.get("label") or "snapshot"
+    template = opts.get("out_template")
     out_path = opts.get("out")
-    if not out_path:
-        from datetime import datetime
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-        out_path = f"snapshot-{ts}.md"
-    out_file = Path(out_path)
 
+    if not out_path:
+        if not template:
+            template = "snapshots/{label}_{date}_{time}.md"
+        now = datetime.now()
+        out_path = template.format(
+            label=label,
+            date=now.strftime("%Y%m%d"),
+            time=now.strftime("%H%M%S"),
+        )
+
+    out_file = Path(out_path)
+    out_file.parent.mkdir(parents=True, exist_ok=True)  # ensure snapshots/ exists
+
+    # Build and write snapshot
     md = build_snapshot(opts)
     out_file.write_text(md, encoding="utf-8")
     print(f"Project snapshot saved to: {out_file}")

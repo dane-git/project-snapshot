@@ -53,6 +53,10 @@ Run:
 ```bash
 python project_snapshot_cli.py --config snapshot.config.toml
 ```
+With debug and label:
+```bash
+python project_snapshot_cli.py --config snapshot.config.toml --label projectName --debug
+```
 
 ### 2 CLI only
 
