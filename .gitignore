@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+.build/
+dist/
+*.log
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE/editor artifacts
+.idea/
+.vscode/
+*.swp
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Snapshots (generated Markdown)
+snapshots/
+*.snapshot.md
+snapshot-*.md
+
+# Configs you don’t want in Git (optional)
+snapshot.config.toml
+snapshot.config.json
